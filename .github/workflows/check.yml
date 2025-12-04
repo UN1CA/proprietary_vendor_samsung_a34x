@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v6.0.1
         with:
           submodules: true
 
@@ -43,7 +43,7 @@ jobs:
 
       - name: Set up Node.js
         if: env.need_update == 1
-        uses: actions/setup-node@v4.2.0
+        uses: actions/setup-node@v6.1.0
         with:
           node-version: 'latest'
 
@@ -128,15 +128,13 @@ jobs:
           ./tools/bin/lpunpack -p system_dlkm super.img .
           ./tools/bin/lpunpack -p vendor_dlkm super.img .
           ./tools/bin/lpunpack -p odm_dlkm super.img .
+          ./tools/bin/lpunpack -p odm super.img .
           rm super.img
           [[ -e vendor.img ]] && zip ${{ env.latest_shortversion }}_vendor.zip vendor.img
           [[ -e vendor_dlkm.img ]] && zip ${{ env.latest_shortversion }}_vendor_dlkm.zip vendor_dlkm.img
           [[ -e system_dlkm.img ]] && zip ${{ env.latest_shortversion }}_system_dlkm.zip system_dlkm.img
           [[ -e odm_dlkm.img ]] && zip ${{ env.latest_shortversion }}_odm_dlkm.zip odm_dlkm.img
-          #[[ -e vendor.img ]] && rm vendor.img
-          [[ -e vendor_dlkm.img ]] && rm vendor_dlkm.img
-          [[ -e system_dlkm.img ]] && rm system_dlkm.img
-          [[ -e odm_dlkm.img ]] && rm odm_dlkm.img
+          [[ -e odm.img ]] && zip ${{ env.latest_shortversion }}_odm.zip odm.img
 
       - name: Extract TA blobs for TWRP decryption
         if: env.need_update == 1
@@ -147,7 +145,6 @@ jobs:
           tar cvf ../../${{ env.latest_shortversion }}_TA_blobs.tar *
           cd ../..
           sudo umount vendor_mount/
-          [[ -e vendor.img ]] && rm vendor.img
           
       - name: Extract boot partition
         if: env.need_update == 1
@@ -184,10 +181,22 @@ jobs:
           lz4 -d recovery.img.lz4 recovery.img
           rm recovery.img.lz4
 
+      - name: Create a firmware package for UN1CA build system.
+        if: env.need_update == 1
+        run: |
+          mkdir firmware_package; cd firmware_package
+          tar xvf ../${{ env.ap_tar }} dtbo.img.lz4 boot.img.lz4 vendor_boot.img.lz4 init_boot.img.lz4
+          tar xvf ../${{ env.bl_tar }} vbmeta.img.lz4
+          FILE_NAME="${{ env.latest_shortversion }}_UN1CA_firmware_package.zip"
+          for i in vendor vendor_dlkm system_dlkm odm_dlkm odm; do
+            lz4 -B6 --content-size -q "../$i.img" "$i.img.lz4"
+          done
+          zip -r "../$FILE_NAME" vendor.img.lz4 vendor_dlkm.img.lz4 system_dlkm.img.lz4 odm_dlkm.img.lz4 odm.img.lz4 dtbo.img.lz4 boot.img.lz4 vendor_boot.img.lz4 init_boot.img.lz4 vbmeta.img.lz4
+
       - name: Prepare AP and BL for release
         if: env.need_update == 1
         run: |
-          tar vf ${{ env.ap_tar }} --delete boot.img.lz4 recovery.img.lz4 super.img.lz4 vbmeta.img.lz4 vbmeta_system.img.lz4 init_boot.img.lz4 vendor_boot.img.lz4 meta-data
+          tar vf ${{ env.ap_tar }} --delete boot.img.lz4 recovery.img.lz4 super.img.lz4 vbmeta.img.lz4 vbmeta_system.img.lz4 init_boot.img.lz4 vendor_boot.img.lz4 meta-data misc.bin.lz4 userdata.img.lz4
           md5sum ${{ env.ap_tar }} | sed "s/  .*\//  /;s/\.md5$//" >> ${{ env.ap_tar }}
           tar vf ${{ env.bl_tar }} --delete vbmeta.img.lz4
           md5sum ${{ env.bl_tar }} | sed "s/  .*\//  /;s/\.md5$//" >> ${{ env.bl_tar }}
@@ -223,7 +232,7 @@ jobs:
 
       - name: Upload release assets
         if: env.need_update == 1
-        uses: softprops/action-gh-release@v2.2.1
+        uses: softprops/action-gh-release@v2.5.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -241,7 +250,8 @@ jobs:
             ${{ env.latest_shortversion }}_vendor.zip
             ${{ env.latest_shortversion }}_vendor_dlkm.zip
             ${{ env.latest_shortversion }}_system_dlkm.zip
-            ${{ env.latest_shortversion }}_odm_dlkm.zip            
+            ${{ env.latest_shortversion }}_odm_dlkm.zip   
+            ${{ env.latest_shortversion }}_odm.zip                     
             ${{ env.latest_shortversion }}_TA_blobs.tar
             boot.img
             vendor_boot.img
@@ -250,3 +260,4 @@ jobs:
             recovery.img
             lpdump
             ${{ env.latest_shortversion }}_mtk_fw.tar.md5
+            ${{ env.latest_shortversion }}_UN1CA_firmware_package.zip
